@@ -10,6 +10,8 @@ All reported numbers come from QC runs. The R scripts only evaluate QC exports, 
 
 **Public backtest.** The full run with real orders in E-mini Nasdaq-100 futures (NQ) is public on QuantConnect. It covers January 2015 to November 2026 and shows the code, orders and statistics: https://www.quantconnect.cloud/backtest/737aabdee9588fffd28b21c70ea61438/. It uses `qc/nq_orb_2015_2026/main.py`.
 
+**Paper and licence.** The paper is at https://ludwigjmarx.com/research/wp1-opening-gap-breakouts and on SSRN (abstract ID 7740185). The paper is licensed under CC BY-NC-ND 4.0. The code in this repository is licensed under MIT.
+
 ## Contents
 
 | Path | What it is |
