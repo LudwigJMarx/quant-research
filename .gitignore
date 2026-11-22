@@ -1,0 +1,10 @@
+# Licensed price data never go into this repository.
+*.fst
+data/
+**/qc_state_*.json
+**/orders_*.json
+__pycache__/
+.pytest_cache/
+.coverage
+.Rhistory
+.DS_Store

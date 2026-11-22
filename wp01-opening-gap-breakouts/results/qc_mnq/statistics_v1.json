@@ -1,0 +1,43 @@
+{
+ "backtestStart": "2019-11-15 00:00:00",
+ "backtestEnd": "2026-08-23 23:59:59",
+ "runtimeStatistics": {
+  "Equity": "$72,734.12",
+  "Fees": "-$7,001.88",
+  "Holdings": "$0.00",
+  "Net Profit": "$-27,265.88",
+  "Probabilistic Sharpe Ratio": "0.003%",
+  "Return": "-27.27 %",
+  "Unrealized": "$0.00",
+  "Volume": "$372,335,874.00"
+ },
+ "statistics": {
+  "Total Orders": "2096",
+  "Average Win": "2.14%",
+  "Average Loss": "-1.00%",
+  "Compounding Annual Return": "-4.589%",
+  "Drawdown": "41.900%",
+  "Expectancy": "-0.023",
+  "Start Equity": "100000",
+  "End Equity": "72734.12",
+  "Net Profit": "-27.266%",
+  "Sharpe Ratio": "-0.31",
+  "Sortino Ratio": "-1.346",
+  "Probabilistic Sharpe Ratio": "0.003%",
+  "Loss Rate": "69%",
+  "Win Rate": "31%",
+  "Profit-Loss Ratio": "2.14",
+  "Alpha": "-0.045",
+  "Beta": "-0.047",
+  "Annual Standard Deviation": "0.16",
+  "Annual Variance": "0.026",
+  "Information Ratio": "-0.601",
+  "Tracking Error": "0.236",
+  "Treynor Ratio": "1.069",
+  "Total Fees": "$7001.88",
+  "Estimated Strategy Capacity": "$220000000.00",
+  "Lowest Capacity Asset": "MNQ Z5W3F7B78MWX",
+  "Portfolio Turnover": "176.98%",
+  "Drawdown Recovery": "125"
+ }
+}

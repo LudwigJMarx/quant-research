@@ -1,0 +1,7 @@
+PRUEF V51 sharpe -0.1795 cagr -0.0361 dd -0.3315 tage 1258 trades 426 r_mittel -0.0047 r_median -1.0000 treffer 0.3052 boot05 -0.1380 boot025 -0.1625 rang 0.2950 zufall95 0.4652
+PRUEF bestanden False
+JAHR 2015 -1.1667 -0.1647
+JAHR 2016 -1.1287 -0.1306
+JAHR 2017 0.2244 0.0197
+JAHR 2018 1.0523 0.2167
+JAHR 2019 -0.5747 -0.0761

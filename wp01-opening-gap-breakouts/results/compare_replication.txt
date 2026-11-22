@@ -1,0 +1,72 @@
+== Table: four versions of the replication on QuantConnect ==
+   version        end return_pa sharpe_qc max_loss trades slippage_r
+     <int>     <char>    <char>    <char>   <char>  <int>      <num>
+1:       1 2026-08-23   -4.589%     -0.31  41.900%    867      0.120
+2:       2 2026-08-23    6.437%      0.17  24.700%    607      0.161
+3:       3 2026-08-23   13.085%      0.47  16.900%    618      0.039
+4:       4 2026-11-20   16.760%      0.63  16.600%    649      0.037
+research model in R (V51): return 16.2%, Sharpe 0.90, largest loss -23.9%, 645 trades
+research model before the data correction (volume 9:30-9:34): Sharpe 0.95
+    year sharpe_930_934 sharpe_931_934
+   <int>          <num>          <num>
+1:  2020           0.15           0.13
+2:  2021           0.27           0.55
+3:  2022           0.91           1.34
+4:  2023          -0.27          -0.64
+5:  2024           2.38           2.41
+6:  2025           1.26           1.28
+7:  2026           1.54           0.66
+
+== Fill model: slippage per trade (index points, R) ==
+   version entry_pts stop_pts slippage_r
+     <int>     <num>    <num>      <num>
+1:       1       4.8      4.4      0.120
+2:       2       7.6      4.4      0.161
+3:       3       1.3      1.6      0.039
+4:       4       1.3      1.7      0.037
+
+== Signal source: version 1 (futures volume) against the research model (QQQ volume 9:30-9:34) ==
+only in R: 192 days (0.44 R); only on QuantConnect: 408 days (-0.08 R); common 459
+
+== Vendor data: days only in R / only on QuantConnect by year (version 3 against volume 9:30-9:34, to 12 Aug 2026) ==
+    year  both only_R only_QC
+   <int> <int>  <int>   <int>
+1:  2020    89      0       2
+2:  2021   101      3       1
+3:  2022    93      3       2
+4:  2023    81      3       1
+5:  2024    89      2       2
+6:  2025    71     23      28
+7:  2026    42     17      16
+
+== Agreement: version 4 against the research model (V51), full period ==
+common days 620, only R 25, only QuantConnect 29
+common days: mean R in R 0.212, on QuantConnect 0.212 (at trigger prices 0.250), correlation 0.96, same direction 98.2%
+    year only_R only_QC
+   <int>  <int>   <int>
+1:  2020      0       1
+2:  2021      2       1
+3:  2022      2       3
+4:  2023      2       0
+5:  2024      3       1
+6:  2025      7      19
+7:  2026      9       4
+
+== Section 8: candidate with real orders in MNQ (version 4) ==
+trades 649, return 16.760%, Sharpe (after risk-free rate) 0.63, largest loss 16.600%, hit rate 33.6%, mean 0.210 R, median -1.0 R
+     side trades   hit mean_winner mean_r
+   <char>  <int> <num>       <num>  <num>
+1:   long    331 0.338        2.56  0.188
+2:  short    318 0.333        2.70  0.232
+random direction (null-model run, trigger price, same days): rank 0.9970, mean 0.2514 R, bootstrap lower bound 0.1164 R, 650 trades
+concentration: ten best trades 66% of total profit, best 2% of trades 78%
+mean R by year:
+    year trades mean_r
+   <int>  <int>  <num>
+1:  2020     89  0.006
+2:  2021    104  0.255
+3:  2022    102  0.366
+4:  2023     83 -0.035
+5:  2024     88  0.490
+6:  2025     96  0.194
+7:  2026     87  0.147

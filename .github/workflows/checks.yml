@@ -1,0 +1,46 @@
+# Checks on every push and pull request. Each step names its check, so a red step says what failed.
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  wp01:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wp01-opening-gap-breakouts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Result files hold no price columns
+        working-directory: .
+        run: python3 scripts/check_results.py
+
+      - name: Python tests with coverage (variant program and local runner)
+        run: |
+          pip install numpy==2.3.3 pytest==8.4.2 pytest-cov==7.0.0
+          python3 -m pytest tests --cov=qc/variants --cov=qc/local --cov-report=term --cov-fail-under=85
+
+      - uses: r-lib/actions/setup-r@v2
+
+      - name: R packages
+        run: Rscript -e 'install.packages(c("data.table", "ggplot2", "jsonlite"), repos = "https://cloud.r-project.org")'
+
+      - name: R controls for the research backtester
+        run: |
+          Rscript R/test_bt.R
+          Rscript R/test_stop.R
+
+      - name: Paper numbers and figures reproduce from the published results
+        run: |
+          Rscript R/variant_numbers.R
+          Rscript R/compare_replication.R
+          Rscript R/paper_figures.R
+          git diff --exit-code -- results/variant_numbers.txt results/compare_replication.txt
