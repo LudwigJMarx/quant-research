@@ -2,9 +2,13 @@
 
 Code and derived results for Working Paper No. 01 (Ludwig J. Marx, November 2026, Version 1.0).
 
-The paper tests whether the opening gap of the Nasdaq-100 can be traded within the day. A rule enters in a chosen direction when price leaves the opening range and holds to the close. The rules were developed in R on QQQ minute bars from Financial Modeling Prep (FMP), the research model. Every reported number was then recomputed on QuantConnect (QC). The final rule was also traded on QC with real orders in Micro Nasdaq-100 futures (MNQ). 51 variants were registered and counted. The selected candidate fails the registered hurdle (deflated Sharpe ratio 0.83 against 0.95) and fails in the test sample 2015 to 2019.
+The paper tests whether the opening gap of the Nasdaq-100 can be traded within the day. A rule enters in a chosen direction when price leaves the opening range and holds to the close. The rules were developed in R on QQQ minute bars from Financial Modeling Prep (FMP), the research model. Every reported number was then recomputed on QuantConnect (QC).
+
+The final rule was also traded on QC with real orders in Micro Nasdaq-100 futures (MNQ). 51 variants were registered and counted. The selected candidate fails the registered hurdle (deflated Sharpe ratio 0.83 against 0.95) and fails in the test sample 2015 to 2019.
 
 All reported numbers come from QC runs. The R scripts only evaluate QC exports, compare QC with the research model and draw the figures.
+
+**Public backtest.** The full run with real orders in E-mini Nasdaq-100 futures (NQ) is public on QuantConnect. It covers January 2015 to November 2026 and shows the code, orders and statistics: https://www.quantconnect.cloud/backtest/737aabdee9588fffd28b21c70ea61438/. It uses `qc/nq_orb_2015_2026/main.py`.
 
 ## Contents
 
@@ -27,7 +31,27 @@ All reported numbers come from QC runs. The R scripts only evaluate QC exports, 
 | `results/` | Derived results without prices (see below) |
 | `figures/` | Figures 1, 3, 4, 5 and 6 as produced by `R/paper_figures.R` from `results/` |
 
-The code uses German identifiers. A short glossary: tag = day, luecke = gap, kerze = candle, spanne = range, einstieg = entry, schluss = close, ausstieg = exit, gegen = opposite edge of the range, mitte = middle of the range, richtung = direction, erster = first break of either side, zufall = random, rang = rank, hebel = leverage or exposure, schlupf = slippage, pruef = test sample, merkmale = day features.
+Most of the code uses German identifiers. `qc/nq_orb_2015_2026` is already in English. Glossary:
+
+| German | English |
+| --- | --- |
+| tag | day |
+| luecke | gap |
+| kerze | candle |
+| spanne | range |
+| einstieg | entry |
+| schluss | close |
+| ausstieg | exit |
+| gegen | opposite edge of the range |
+| mitte | middle of the range |
+| richtung | direction |
+| erster | first break of either side |
+| zufall | random |
+| rang | rank |
+| hebel | leverage or exposure |
+| schlupf | slippage |
+| pruef | test sample |
+| merkmale | day features |
 
 ## Variant names
 
@@ -66,6 +90,8 @@ Paths below are relative to this folder. "Log line" means a line of the QC log w
 | Real orders better than 99.7% of random runs; mean 0.25 R, bootstrap lower bound 0.12 R | `qc/mnq_orb_null/main.py` (runtime statistics nm_*) | `results/qc_mnq/statistics_null.json` |
 | Figure 4, figure 5 (ten best trades 66%, best 2% of trades 78%) | `R/paper_figures.R`, `R/compare_replication.R` | `results/qc_mnq/trades_v4.csv` |
 | Figure 6; exposure 2.4 times in the median (2.5 long, 2.4 short), 25% and 21% above 3.5 times | `R/paper_figures.R` | `results/qc_mnq/exposure_v4.csv` |
+| Test sample with real orders in NQ: 426 trades, -4.0% a year, largest loss -31.7%, Sharpe -0.33 | `qc/nq_orb_test_sample/main.py` | `results/qc_mnq/statistics_nq_test_sample.json` |
+| Full run 2015 to Nov 2026 in NQ (public backtest): 1,073 trades, 8.5% a year, largest loss -31.7%, Sharpe 0.31 | `qc/nq_orb_2015_2026/main.py` | `results/qc_mnq/statistics_nq_2015_2026.json` |
 | Controls: seven hand-computed trades, synthetic prices Sharpe 5.98 with trend and 0.59 without | `R/test_bt.R` | none |
 | The QC program reproduces the research model's Sharpe ratios on FMP data | `qc/local/run_local.py` with `qc/variants` on an FMP CSV | your FMP data, `results/research_model/variants_r.csv` |
 
@@ -138,9 +164,9 @@ On QC, read the log of `qc/variants` (prefixes VAR, DSR, Q1, MERK, TAG) and of `
 
 ## Verification done before publication
 
-- `qc/variants/main.py` was run through `qc/local/run_local.py` next to the unpublished full program on the same CSV of FMP minute bars for 2020 and 2021 (once with evaluation from 2 January 2020 and once from 1 February 2020, with January as warm-up). All 49 published variants gave identical VAR lines (every field), and the Q1, MERK and TAG lines were identical too. `qc/test_sample/main.py` gave identical output to its full counterpart on the same data.
+- `qc/variants/main.py` and the unpublished full program both ran through `qc/local/run_local.py` on the same CSV of FMP minute bars for 2020 and 2021. One run started the evaluation on 2 January 2020, the other on 1 February 2020 with January as warm-up. All 49 published variants gave identical VAR lines (every field), and the Q1, MERK and TAG lines were identical too. `qc/test_sample/main.py` gave identical output to its full counterpart on the same data.
 - `R/research_model.R` on FMP data from 2020 reproduces the published research model trade lists exactly from February 2020 on. The published lists used a warm-up from June 2019.
-- `R/qc_exports.R` rebuilds the four trade lists of the replication from the QC order exports with identical R multiples, and the equity curve of version 4 matches the final equity of the run.
+- `R/qc_exports.R` rebuilds the four trade lists of the replication from the QC order exports with identical R multiples. The equity curve of version 4 matches the final equity of the run.
 
 ## License
 

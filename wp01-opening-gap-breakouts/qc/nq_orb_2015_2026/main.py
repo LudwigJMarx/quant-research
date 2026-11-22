@@ -2,26 +2,26 @@
 # 2015 to November 2026, test sample included. Orders go to E-mini Nasdaq-100 futures (NQ), because
 # Micro futures (MNQ) start only in May 2019. Start capital 1 million USD, because one NQ contract
 # is about 20 times an MNQ contract. Signals come from QQQ minute bars as in version 4. The random-
-# direction test (runtime statistics nm_*) is computed virtually at the trigger price on NQ bars.
+# direction test is computed virtually at the trigger price on NQ bars.
 from AlgorithmImports import *
 from collections import deque
 import random, math
 
-MARKT = "NQ"
-RISIKO = 0.01
-MAX_HEBEL = 4.0
-KOSTEN = 1e-4                         # as in the research model, only for the virtual null model
-HANDEL_AB = datetime(2015, 1, 2)
-I = Futures.Indices
-CFG = {
-    "NQ":  dict(signal="QQQ", fut=lambda: I.NASDAQ_100_E_MINI, tz=TimeZones.NEW_YORK, auf=570, bis=690, ext=False, kapital=1000000),
-}
+RISK = 0.01                           # share of equity at risk per trade
+MAX_LEVERAGE = 4.0                    # notional at most 4 times equity
+COST = 1e-4                           # as in the research model, only for the virtual null model
+TRADE_FROM = datetime(2015, 1, 2)
+SIGNAL = "QQQ"
+OPEN_MIN = 570                        # 9:30 in minutes after midnight, New York time
+LAST_ENTRY_MIN = 690                  # 11:30: an entry order not filled by then is cancelled
+START_CAPITAL = 1000000
 
 
-class Spanne:
+class OpeningRange:
+    """Open, high, low and close of the first five minutes, and the volume of minutes 2 to 5."""
     def __init__(self):
         self.o = self.h = self.l = self.c = None
-        self.v4 = 0.0                 # volume without the first minute
+        self.vol_after_first = 0.0    # volume without the first minute
         self.n = 0
 
     def add(self, bar, minute):
@@ -31,238 +31,235 @@ class Spanne:
         self.l = bar.low if self.l is None else min(self.l, bar.low)
         self.c = bar.close
         if minute >= 1:
-            self.v4 += bar.volume
+            self.vol_after_first += bar.volume
         self.n += 1
 
 
-class Virtuell:
+class VirtualTrade:
     """One trade at the trigger price, as in the research model: the stop counts in the entry second too."""
     def __init__(self, d, hi, lo):
-        self.d, self.ein, self.stop = d, (hi if d == 1 else lo), (lo if d == 1 else hi)
-        self.fill = self.aus = None
+        self.d, self.entry, self.stop = d, (hi if d == 1 else lo), (lo if d == 1 else hi)
+        self.fill = self.exit = None
 
-    def bar(self, b, darf_einsteigen):
-        if self.aus is not None:
+    def bar(self, b, may_enter):
+        if self.exit is not None:
             return
         if self.fill is None:
-            if not darf_einsteigen:
+            if not may_enter:
                 return
-            if self.d == 1 and b.high >= self.ein:
-                self.fill = max(self.ein, b.open)
-            elif self.d == -1 and b.low <= self.ein:
-                self.fill = min(self.ein, b.open)
+            if self.d == 1 and b.high >= self.entry:
+                self.fill = max(self.entry, b.open)
+            elif self.d == -1 and b.low <= self.entry:
+                self.fill = min(self.entry, b.open)
             else:
                 return
         if self.d == 1 and b.low <= self.stop:
-            self.aus = min(self.stop, b.open) if b.open < self.fill else self.stop
+            self.exit = min(self.stop, b.open) if b.open < self.fill else self.stop
         elif self.d == -1 and b.high >= self.stop:
-            self.aus = max(self.stop, b.open) if b.open > self.fill else self.stop
-        self.letzter = b.close
+            self.exit = max(self.stop, b.open) if b.open > self.fill else self.stop
+        self.last_close = b.close
 
-    def ergebnis(self):
+    def result(self):
         if self.fill is None:
             return None
-        aus = self.aus if self.aus is not None else self.letzter
-        ret = self.d * (aus - self.fill) / self.fill
+        exit_price = self.exit if self.exit is not None else self.last_close
+        ret = self.d * (exit_price - self.fill) / self.fill
         stop_pct = abs(self.fill - self.stop) / self.fill
-        r = self.d * (aus - self.fill) / abs(self.ein - self.stop)
+        r = self.d * (exit_price - self.fill) / abs(self.entry - self.stop)
         return ret, stop_pct, r
 
 
-class OrbMarkt(QCAlgorithm):
+class OpeningRangeBreakoutNQ(QCAlgorithm):
 
     def initialize(self):
-        self.k = CFG[MARKT]
         self.set_start_date(2014, 11, 14)
         self.set_end_date(2026, 11, 20)
-        self.set_cash(self.k.get("kapital", 100000))
-        self.set_time_zone(self.k["tz"])
-        self.sig = self.add_equity(self.k["signal"], Resolution.MINUTE, extended_market_hours=False).symbol \
-            if self.k["signal"] else None
-        self.fut = self.add_future(self.k["fut"](), Resolution.SECOND,
+        self.set_cash(START_CAPITAL)
+        self.set_time_zone(TimeZones.NEW_YORK)
+        self.sig = self.add_equity(SIGNAL, Resolution.MINUTE, extended_market_hours=False).symbol
+        self.fut = self.add_future(Futures.Indices.NASDAQ_100_E_MINI, Resolution.SECOND,
                                    data_normalization_mode=DataNormalizationMode.RAW,
                                    data_mapping_mode=DataMappingMode.OPEN_INTEREST,
-                                   contract_depth_offset=0, extended_market_hours=self.k["ext"])
+                                   contract_depth_offset=0, extended_market_hours=False)
         self.fut.set_filter(0, 120)
         self.vol_hist = deque(maxlen=14)
-        self.cnt = {"tage": 0, "signale": 0, "einstiege": 0, "stops": 0, "schluss": 0, "zu_klein": 0,
-                    "spanne_unvollstaendig": 0, "nicht_ausgeloest": 0, "doji": 0}
-        self.virt_tage = []           # per signal day: (direction, result long, result short)
-        self.handelstage = 0
-        self.tag = None
-        self.neuer_tag()
+        self.count = {"Days evaluated": 0, "Signal days": 0, "Entries": 0, "Stopped out": 0,
+                      "Closed at 15:55": 0, "Too small to trade": 0, "Incomplete opening range": 0,
+                      "Not triggered by 11:30": 0, "Flat first candle": 0}
+        self.virtual_days = []        # per signal day: (direction, result long, result short)
+        self.days_evaluated = 0
+        self.day = None
+        self.new_day()
 
-    def neuer_tag(self):
-        self.ss = Spanne()            # signal instrument
-        self.sf = Spanne()            # traded instrument
-        self.signal_fertig = False
-        self.einstieg_ticket = self.stop_ticket = None
-        self.vertrag = None
-        self.richtung = 0
+    def new_day(self):
+        self.range_signal = OpeningRange()    # QQQ
+        self.range_future = OpeningRange()    # traded future
+        self.signal_done = False
+        self.entry_ticket = self.stop_ticket = None
+        self.contract = None
+        self.direction = 0
         self.stop = None
-        self.eingestiegen = self.geschlossen = False
-        self.virt = None
-        self.aus_min = None
+        self.entered = self.closed = False
+        self.virtual = None
+        self.exit_min = None
 
-    def ausstieg_minute(self):
+    def exit_minute(self):
         # 5 minutes before the close of the cash session, shortened sessions included
-        if self.sig is not None:
-            h = self.securities[self.sig].exchange.hours
-            start = datetime.combine(self.tag, time(9, 0))
-            sc = h.get_next_market_close(start, False)
-            if sc.date() != self.tag:
-                return None
-            return sc.hour * 60 + sc.minute - 5
-        return None
+        hours = self.securities[self.sig].exchange.hours
+        close = hours.get_next_market_close(datetime.combine(self.day, time(9, 0)), False)
+        if close.date() != self.day:
+            return None
+        return close.hour * 60 + close.minute - 5
 
     def on_data(self, data: Slice):
-        if self.tag != self.time.date():
-            if self.tag is not None:
-                if self.portfolio.invested and not self.geschlossen:
-                    self.ausstieg("schluss")
-                self.virt_abschluss()
-            self.tag = self.time.date()
-            self.neuer_tag()
-            self.aus_min = self.ausstieg_minute()
-        auf = self.k["auf"]
-        if self.sig is not None:
-            qb = data.bars.get(self.sig)
-            if qb is not None:
-                t0 = self.time - qb.period          # bar start in algorithm time (bar.time is exchange time)
-                mq = t0.hour * 60 + t0.minute - auf
-                if 0 <= mq <= 4:
-                    self.ss.add(qb, mq)
+        if self.day != self.time.date():
+            if self.day is not None:
+                if self.portfolio.invested and not self.closed:
+                    self.exit_position()
+                self.close_virtual_day()
+            self.day = self.time.date()
+            self.new_day()
+            self.exit_min = self.exit_minute()
+        qb = data.bars.get(self.sig)
+        if qb is not None:
+            t0 = self.time - qb.period          # bar start in algorithm time (bar.time is exchange time)
+            mq = t0.hour * 60 + t0.minute - OPEN_MIN
+            if 0 <= mq <= 4:
+                self.range_signal.add(qb, mq)
         fb = data.bars.get(self.fut.symbol)
         if fb is not None:
             t0 = self.time - fb.period
-            mf = t0.hour * 60 + t0.minute - auf
+            mf = t0.hour * 60 + t0.minute - OPEN_MIN
             if 0 <= mf <= 4:
-                self.sf.add(fb, mf)
+                self.range_future.add(fb, mf)
 
         m = self.time.hour * 60 + self.time.minute
-        if not self.signal_fertig and m >= auf + 5:
-            self.signal_fertig = True
+        if not self.signal_done and m >= OPEN_MIN + 5:
+            self.signal_done = True
             self.signal()
 
         # virtual trades for the null model
-        if self.virt is not None and fb is not None and self.aus_min is not None and m < self.aus_min:
-            darf = m < self.k["bis"]
-            for v in self.virt:
-                v.bar(fb, darf)
+        if self.virtual is not None and fb is not None and self.exit_min is not None and m < self.exit_min:
+            may_enter = m < LAST_ENTRY_MIN
+            for v in self.virtual:
+                v.bar(fb, may_enter)
 
-        if self.einstieg_ticket is not None and not self.portfolio.invested and m >= self.k["bis"]:
-            if not self.eingestiegen:
-                self.einstieg_ticket.cancel("Einstiegsgrenze")
-                self.cnt["nicht_ausgeloest"] += 1
-            self.einstieg_ticket = None
+        if self.entry_ticket is not None and not self.portfolio.invested and m >= LAST_ENTRY_MIN:
+            if not self.entered:
+                self.entry_ticket.cancel("entry window closed")
+                self.count["Not triggered by 11:30"] += 1
+            self.entry_ticket = None
 
-        if self.aus_min is not None and m >= self.aus_min and self.portfolio.invested and not self.geschlossen:
-            self.geschlossen = True
-            self.ausstieg("schluss")
+        if self.exit_min is not None and m >= self.exit_min and self.portfolio.invested and not self.closed:
+            self.closed = True
+            self.exit_position()
 
     def signal(self):
-        sig = self.ss if self.sig is not None else self.sf
-        if sig.o is None or self.sf.h is None or self.aus_min is None:
-            self.cnt["spanne_unvollstaendig"] += 1
+        sig = self.range_signal
+        if sig.o is None or self.range_future.h is None or self.exit_min is None:
+            self.count["Incomplete opening range"] += 1
             return
-        relvol = sig.v4 / (sum(self.vol_hist) / len(self.vol_hist)) \
+        relvol = sig.vol_after_first / (sum(self.vol_hist) / len(self.vol_hist)) \
             if len(self.vol_hist) == 14 and sum(self.vol_hist) > 0 else None
-        self.vol_hist.append(sig.v4)
-        if relvol is None or self.time < HANDEL_AB:
+        self.vol_hist.append(sig.vol_after_first)
+        if relvol is None or self.time < TRADE_FROM:
             return
-        self.cnt["tage"] += 1
-        self.handelstage += 1
+        self.count["Days evaluated"] += 1
+        self.days_evaluated += 1
         d = 1 if sig.c > sig.o else (-1 if sig.c < sig.o else 0)
         if d == 0:
-            self.cnt["doji"] += 1
+            self.count["Flat first candle"] += 1
             return
         if relvol < 1.0:
             return
-        self.cnt["signale"] += 1
-        hi, lo = self.sf.h, self.sf.l
+        self.count["Signal days"] += 1
+        hi, lo = self.range_future.h, self.range_future.l
         if hi - lo <= 0:
             return
-        self.virt = [Virtuell(1, hi, lo), Virtuell(-1, hi, lo)]
-        self.virt_richtung = d
-        einstieg = hi if d == 1 else lo
+        self.virtual = [VirtualTrade(1, hi, lo), VirtualTrade(-1, hi, lo)]
+        self.virtual_direction = d
+        entry = hi if d == 1 else lo
         stop = lo if d == 1 else hi
         sec = self.securities[self.fut.mapped] if self.fut.mapped else None
         if sec is None:
             return
-        wert_je_punkt = sec.symbol_properties.contract_multiplier * sec.quote_currency.conversion_rate
-        eq = self.portfolio.total_portfolio_value
-        hebel = min(RISIKO / ((hi - lo) / einstieg), MAX_HEBEL)
-        menge = int(hebel * eq / (einstieg * wert_je_punkt))
-        if menge < 1:
-            self.cnt["zu_klein"] += 1
+        value_per_point = sec.symbol_properties.contract_multiplier * sec.quote_currency.conversion_rate
+        equity = self.portfolio.total_portfolio_value
+        leverage = min(RISK / ((hi - lo) / entry), MAX_LEVERAGE)
+        quantity = int(leverage * equity / (entry * value_per_point))
+        if quantity < 1:
+            self.count["Too small to trade"] += 1
             return
-        self.vertrag = self.fut.mapped
-        self.richtung = d
+        self.contract = self.fut.mapped
+        self.direction = d
         self.stop = stop
-        self.einstieg_ticket = self.stop_market_order(self.vertrag, d * menge, einstieg, tag="einstieg")
+        self.entry_ticket = self.stop_market_order(self.contract, d * quantity, entry, tag="entry")
 
-    def virt_abschluss(self):
-        if self.virt is None:
+    def close_virtual_day(self):
+        if self.virtual is None:
             return
-        self.virt_tage.append((self.virt_richtung, self.virt[0].ergebnis(), self.virt[1].ergebnis()))
-        self.virt = None
+        self.virtual_days.append((self.virtual_direction, self.virtual[0].result(), self.virtual[1].result()))
+        self.virtual = None
 
     def on_order_event(self, ev: OrderEvent):
         if ev.status != OrderStatus.FILLED:
             return
-        if self.einstieg_ticket is not None and ev.order_id == self.einstieg_ticket.order_id:
-            self.cnt["einstiege"] += 1
-            self.eingestiegen = True
-            self.stop_ticket = self.stop_market_order(self.vertrag, -self.richtung * abs(ev.fill_quantity),
+        if self.entry_ticket is not None and ev.order_id == self.entry_ticket.order_id:
+            self.count["Entries"] += 1
+            self.entered = True
+            self.stop_ticket = self.stop_market_order(self.contract, -self.direction * abs(ev.fill_quantity),
                                                       self.stop, tag="stop")
         elif self.stop_ticket is not None and ev.order_id == self.stop_ticket.order_id:
-            self.cnt["stops"] += 1
+            self.count["Stopped out"] += 1
             self.stop_ticket = None
 
-    def ausstieg(self, art):
+    def exit_position(self):
         if self.stop_ticket is not None:
-            self.stop_ticket.cancel("Schluss")
+            self.stop_ticket.cancel("close")
             self.stop_ticket = None
-        self.liquidate(self.vertrag, tag=art)
-        self.cnt["schluss"] += 1
+        self.liquidate(self.contract, tag="close")
+        self.count["Closed at 15:55"] += 1
 
-    def nullmodell(self):
+    def null_model(self):
         def pnl(e):
             if e is None:
                 return 0.0
             ret, sp, _ = e
-            return min(RISIKO / sp, MAX_HEBEL) * (ret - KOSTEN) if sp > 0 else 0.0
+            return min(RISK / sp, MAX_LEVERAGE) * (ret - COST) if sp > 0 else 0.0
 
         def sharpe(x):
-            n = self.handelstage
+            n = self.days_evaluated
             if n < 2:
                 return float("nan")
             m = sum(x) / n
             v = (sum((a - m) ** 2 for a in x) + (n - len(x)) * m * m) / (n - 1)
             return m / math.sqrt(v) * math.sqrt(252) if v > 0 else float("nan")
 
-        tage = self.virt_tage
-        echt = [pnl(l if d == 1 else s) for d, l, s in tage]
-        sr = sharpe(echt)
+        days = self.virtual_days
+        actual = [pnl(l if d == 1 else s) for d, l, s in days]
+        sr = sharpe(actual)
         rnd = random.Random(7)
-        z = []
+        random_sr = []
         for _ in range(1000):
-            z.append(sharpe([pnl(l if rnd.random() < 0.5 else s) for d, l, s in tage]))
-        z.sort()
-        rs = [(l if d == 1 else s)[2] for d, l, s in tage if (l if d == 1 else s) is not None]
+            random_sr.append(sharpe([pnl(l if rnd.random() < 0.5 else s) for d, l, s in days]))
+        random_sr.sort()
+        rs = [(l if d == 1 else s)[2] for d, l, s in days if (l if d == 1 else s) is not None]
         boot = []
         for _ in range(1000 if rs else 0):
             smp = [rs[rnd.randrange(len(rs))] for _ in rs]
             boot.append(sum(smp) / len(smp))
         boot.sort()
-        return {"nm_sharpe": sr, "nm_rang": sum(1 for a in z if a < sr) / len(z), "nm_zufall95": z[949],
-                "nm_trades": len(rs), "nm_r_mittel": sum(rs) / len(rs) if rs else float("nan"),
-                "nm_r_unten": boot[49] if boot else float("nan"), "nm_signaltage": len(tage)}
+        return {"Sharpe at trigger price": sr,
+                "Rank vs random direction": sum(1 for a in random_sr if a < sr) / len(random_sr),
+                "Random direction 95th pct": random_sr[949],
+                "Trades at trigger price": len(rs),
+                "Mean R per trade": sum(rs) / len(rs) if rs else float("nan"),
+                "Mean R bootstrap 5%": boot[49] if boot else float("nan"),
+                "Days in random test": len(days)}
 
     def on_end_of_algorithm(self):
-        self.virt_abschluss()
-        for k, v in self.cnt.items():
+        self.close_virtual_day()
+        for k, v in self.count.items():
             self.set_runtime_statistic(k, str(v))
-        for k, v in self.nullmodell().items():
+        for k, v in self.null_model().items():
             self.set_runtime_statistic(k, f"{v:.4f}" if isinstance(v, float) else str(v))
-        self.set_runtime_statistic("markt", MARKT)
